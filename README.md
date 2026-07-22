@@ -16,7 +16,8 @@ Official surveillance data has a real reporting lag — the most recent 1-3 week
 ![Hugging Face](https://img.shields.io/badge/Hugging_Face-Datasets-yellow)
 
 ---
-
+### Link to the dashboard: [RespiWatch](https://respi-watch-app-fcjqc7wltpfmjogynt8uzr.streamlit.app/)
+---
 ## Repository Structure
 
 | Folder | Contents |
