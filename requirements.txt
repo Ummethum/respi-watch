@@ -1,0 +1,30 @@
+# Core data handling
+pandas==3.0.3
+numpy==2.5.1
+pyarrow==24.0.0
+
+# Modeling
+xgboost==3.3.0
+scikit-learn==1.9.0
+optuna==4.9.0
+prophet==1.3.0
+matplotlib==3.11.0 
+
+# App
+streamlit==1.58.0
+plotly==6.8.0
+geopandas==1.1.4   # required -- app.py has no fallback if this is missing
+
+# Data fetching
+requests==2.34.2
+beautifulsoup4==4.15.0
+lxml==6.1.1
+pytrends-modern==0.2.11
+zeep==4.3.3        # SurvStat SOAP API client (fetch_recent_survstat.py)
+
+# Hugging Face (data storage) + local secrets for CLI pipeline scripts
+huggingface_hub==0.36.2
+python-dotenv==1.2.2 
+
+# Misc utilities
+tqdm==4.68.3

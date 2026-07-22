@@ -1,0 +1,41 @@
+# Data — never committed, lives in Hugging Face instead
+data/
+*.parquet
+*.tsv
+*.shp
+*.shx
+*.dbf
+*.prj
+
+# Secrets — never committed
+.env
+*.token
+HF_TOKEN
+run_weekly_cron.sh   
+# contains your real HF_TOKEN once you fill it in --
+# keep only run_weekly_cron.sh.example (below) in git
+
+# Logs from the weekly cron job
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+
+# Jupyter 
+.ipynb_checkpoints/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+
+# Streamlit
+.streamlit/secrets.toml

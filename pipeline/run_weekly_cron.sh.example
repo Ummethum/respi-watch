@@ -1,0 +1,46 @@
+#!/bin/bash
+# RespiWatch -- weekly cron entrypoint, called by Windows Task Scheduler
+#
+# This wraps run_weekly_update.py with logging, working-directory
+# handling, and virtual environment activation -- Task Scheduler calls
+# THIS script, not python directly, since it needs to set up the shell
+# environment first (cron/Task-Scheduler-invoked shells don't
+# automatically source .bashrc/.profile the way an interactive
+# terminal does).
+
+set -euo pipefail
+
+# --- Adjust these two paths for your setup ---
+PROJECT_DIR="YOUR_PROJECT_DIRECTORY"
+VENV_ACTIVATE="$PROJECT_DIR/venv/bin/activate"   # or conda equivalent, see notes below
+
+# Hugging Face token for push_data_to_hub.py -- set your REAL token here.
+# This file itself is NOT committed to git (see .gitignore), so this is
+# a safe place for it -- do NOT put this line in any file that gets
+# pushed to GitHub.
+export HF_TOKEN="YOUR_HF_TOKEN"
+
+LOG_DIR="$PROJECT_DIR/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/cron_run_$(date +%Y-%m-%d_%H-%M-%S).log"
+
+cd "$PROJECT_DIR"
+
+{
+    echo "===== Weekly update started: $(date) ====="
+
+    if [ -f "$VENV_ACTIVATE" ]; then
+        source "$VENV_ACTIVATE"
+    fi
+
+    python pipeline/run_weekly_update.py
+
+    echo "===== Weekly update finished: $(date) ====="
+} >> "$LOG_FILE" 2>&1
+
+exit_code=$?
+
+# Keep only the last 20 log files, so this doesn't grow forever unattended
+ls -t "$LOG_DIR"/cron_run_*.log 2>/dev/null | tail -n +21 | xargs -r rm
+
+exit $exit_code
