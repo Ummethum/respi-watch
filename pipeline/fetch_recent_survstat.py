@@ -8,7 +8,7 @@ generalised here to loop over all three project diseases and to handle
 the year-boundary edge case (early January still needs the tail end of
 the PREVIOUS year's weeks).
 
-Output format matches a manual SurvStat TSV export
+Output format matches a manual SurvStat TSV export.
 
 Usage:
     python fetch_recent_survstat.py
@@ -22,22 +22,14 @@ from zeep import Client
 # 1. CONFIGURATION
 
 WSDL_URL = "https://tools.rki.de/SurvStat/SurvStatWebService.svc?wsdl"
-OUTPUT_DIR = "./data/rki/raw"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+RKI_BASE_DIR = "./data/rki"
 
 DISEASE_FILTERS = {
     "influenza": "[PathogenOut].[KategorieNz].[Krankheit DE].&[Influenza, saisonal]",
-    "covid":     "[PathogenOut].[KategorieNz].[Krankheit DE].&[COVID-19]",              # PLACEHOLDER -- verify
-    "rsv":       "[PathogenOut].[KategorieNz].[Krankheit DE].&[RSV (Meldepflicht gemäß IfSG)]",        # PLACEHOLDER -- verify
+    "covid":     "[PathogenOut].[KategorieNz].[Krankheit DE].&[COVID-19]",
+    "rsv":       "[PathogenOut].[KategorieNz].[Krankheit DE].&[RSV (Meldepflicht gemäß IfSG)]",
 }
-
-REFERENZ_DEFINITION_ID = 1
-
-# How many weeks back "recent" needs to reach -- used only to decide
-# whether the previous year also needs fetching (early January edge
-# case), not to trim the output -- the full current year's weeks are
-# always fetched and merged, letting the downstream merge logic handle
-# overlap the same way the other fetch_recent_*.py scripts do.
+REFERENZ_DEFINITION_ID = 1  
 LOOKBACK_WEEKS = 6
 
 # 2. DETERMINE WHICH YEAR(S) TO FETCH
@@ -136,7 +128,6 @@ def write_survstat_tsv(df: pd.DataFrame, path: str):
             ]
             f.write("\t".join(values) + "\n")
 
-
 # 5. RUN
 
 if __name__ == "__main__":
@@ -164,11 +155,17 @@ if __name__ == "__main__":
                       f"actual internal disease name. Verify before trusting this "
                       f"output (see the placeholder warning at the top of this file).")
 
-            out_path = os.path.join(OUTPUT_DIR, f"survstat_{disease}_{year}.tsv")
+            disease_dir = os.path.join(RKI_BASE_DIR, disease)
+            os.makedirs(disease_dir, exist_ok=True)
+            # .csv extension to match parse_rki_incidence.py's glob
+            # pattern -- content is still tab-separated/UTF-16, same
+            # as every other file in these folders (the ".csv" name is
+            # a pre-existing convention here, not this script's choice).
+            out_path = os.path.join(disease_dir, f"survstat_{disease}_{year}.csv")
             write_survstat_tsv(df, out_path)
             print(f"  \u2713 Saved: {out_path}")
 
-    print(f"\nDone. Point parse_rki_incidence.py at these files (or wherever "
-          f"it expects manual exports) to continue the existing pipeline "
-          f"unchanged: parse_rki_incidence.py -> aggregate_berlin_boroughs.py "
-          f"-> match_kreis_names.py.")
+    print(f"\nDone. Files are already in the folders parse_rki_incidence.py "
+          f"expects (data/rki/{{disease}}/) -- continue the pipeline as usual: "
+          f"parse_rki_incidence.py -> aggregate_berlin_boroughs.py -> "
+          f"match_kreis_names.py.")

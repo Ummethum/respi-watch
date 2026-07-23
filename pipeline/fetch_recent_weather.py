@@ -42,7 +42,7 @@ DAILY_VARIABLES = [
 # How far back to fetch. Wider than the minimum needed (lag3 = 3 weeks)
 # to comfortably cover ERA5's processing lag plus give a buffer for
 # any missed weekly runs.
-LOOKBACK_WEEKS = 6
+LOOKBACK_WEEKS = 2
 BATCH_SIZE = 3       
 DELAY_BETWEEN_BATCHES = 0.25
 MAX_REQUEST_RETRIES = 3
@@ -65,7 +65,7 @@ NUTS1_TO_BUNDESLAND = {
 coords = pd.read_csv(COORDS_PATH, dtype={"kreis_id": str})
 print(f"Loaded {len(coords)} Kreis centroids")
 
-end_date = pd.Timestamp.today().normalize() - pd.Timedelta(days=6)   # ERA5 lag buffer
+end_date = pd.Timestamp.today().normalize()
 start_date = end_date - pd.Timedelta(weeks=LOOKBACK_WEEKS)
 print(f"Fetching {start_date.date()} -> {end_date.date()}")
 
