@@ -58,9 +58,7 @@ HORIZON_LABELS = {
 }
 
 # Maps show the actual predicted incidence value directly, colour-coded
-# on a fixed 0-50 scale (white/pale = low, dark red = high) -- no
-# increase/decrease categorisation, just the number itself, coloured
-# consistently across all three maps so they're directly comparable.
+# on a fixed 0-50 scale (white/pale = low, dark red = high)
 INCIDENCE_COLOR_MIN = 0
 INCIDENCE_COLOR_MAX = 50
 
@@ -71,18 +69,10 @@ st.set_page_config(page_title="RespiWatch", layout="wide")
 def _resolve_data_path(filename: str) -> str:
     """
     Downloads the given file fresh from the Hugging Face Dataset repo
-    (cached by huggingface_hub itself between reruns). HF_REPO_ID is
-    REQUIRED -- no local-file fallback. A silent fallback to local
-    paths was convenient for early local testing, but risks masking a
-    misconfigured deployment (e.g. a missing Streamlit Cloud secret)
-    by quietly reading stale/absent local files instead of failing
-    loudly.
+    (cached by huggingface_hub itself between reruns).
     """
     if not HF_REPO_ID:
-        st.error("HF_REPO_ID is not configured -- this app only reads data "
-                "from Hugging Face, there is no local fallback. Set it via "
-                "a local .streamlit/secrets.toml file (development) or "
-                "Streamlit Cloud's Secrets manager (production).")
+        st.error("HF_REPO_ID is not configured")
         st.stop()
 
     from huggingface_hub import hf_hub_download
@@ -108,12 +98,11 @@ def load_gap_fill_predictions() -> pd.DataFrame:
     """
     Nowcasts bridging the SurvStat reporting-lag gap, produced by
     generate_gap_fill_predictions.py. Unlike the other data files,
-    this one is LEGITIMATELY ABSENT sometimes -- generate_gap_fill_
+    this one is LEGITIMATELY ABSENT sometimes. generate_gap_fill_
     predictions.py only writes it when there's an actual gap to fill;
     in a week where SurvStat is fully caught up, there's nothing to
     nowcast and no file gets produced or uploaded. A 404 from Hugging
-    Face here is therefore an expected, normal case, not an error --
-    caught explicitly rather than letting it propagate as a crash.
+    Face here is therefore an expected, normal case, not an error.
     """
     try:
         path = _resolve_data_path("gap_fill_predictions.parquet")
@@ -131,12 +120,32 @@ def load_gap_fill_predictions() -> pd.DataFrame:
 def load_recent_avg_predictions() -> pd.DataFrame:
     """
     Average of the model's own last-4-weeks forecasts, produced by
-    compute_recent_predictions_average.py -- a smoothed view of where
-    the model has been pointing recently, rather than a single week's
-    possibly-noisy prediction.
+    compute_recent_predictions_average.py.
     """
     try:
         path = _resolve_data_path("recent_avg_predictions.parquet")
+    except Exception as e:
+        if "EntryNotFound" in type(e).__name__ or "404" in str(e):
+            return pd.DataFrame()
+        raise
+
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+@st.cache_data(ttl=3600)
+def load_prediction_history() -> pd.DataFrame:
+    """
+    History of past next-week forecasts, one row per Kreis per week,
+    produced by build_prediction_history.py -- what the model predicted
+    for each past week, at the time it was predicted (not a backtest,
+    the actual live forecasts as they were made). LEGITIMATELY ABSENT
+    for a fresh deployment until enough weekly runs have accumulated
+    at least one snapshot to build from.
+    """
+    try:
+        path = _resolve_data_path("prediction_history.parquet")
     except Exception as e:
         if "EntryNotFound" in type(e).__name__ or "404" in str(e):
             return pd.DataFrame()
@@ -192,7 +201,7 @@ def get_last_known_actual(master_df: pd.DataFrame, kreis_id: str,
                           disease: str) -> tuple[float | None, pd.Timestamp | None]:
     """
     Returns the most recent NON-NULL actual value for this Kreis and
-    disease, plus the date it's from -- SurvStat's own reporting lag
+    disease, plus the date it's from. SurvStat's own reporting lag
     means the most recent 1-2 weeks are typically still incomplete/null
     by the time this app displays them.
     """
@@ -207,11 +216,10 @@ def get_last_known_actual(master_df: pd.DataFrame, kreis_id: str,
 def build_incidence_table(pred_slice: pd.DataFrame, master: pd.DataFrame,
                           disease: str) -> pd.DataFrame:
     """
-    Builds one row per Kreis: predicted value and last known actual --
-    no trend categorisation, just the raw numbers. Takes an ALREADY-
-    FILTERED prediction slice (one row per Kreis, whatever that slice
-    represents -- next week's forecast, in-2-weeks forecast, or the
-    recent-4-week average) so this single function serves all three
+    Builds one row per Kreis: predicted value and last known actual.
+    Takes an ALREADY-FILTERED prediction slice (one row per Kreis,
+    whatever that slice represents: next week's forecast, in-2-weeks forecast,
+    or the recent-4-week average) so this single function serves all three
     maps without needing to know which one it's building.
     """
     if pred_slice.empty:
@@ -317,6 +325,7 @@ def render_map_with_summary(incidence_df: pd.DataFrame, shapefile, coords: pd.Da
 def render_kreis_dashboard(kreis_id: str, disease: str,
                            forecast_predictions: pd.DataFrame,
                            gap_fill_predictions: pd.DataFrame,
+                           prediction_history: pd.DataFrame,
                            master: pd.DataFrame, coords: pd.DataFrame):
     kreis_name = coords.loc[coords["kreis_id"] == kreis_id, "name"].values
     kreis_name = kreis_name[0] if len(kreis_name) else kreis_id
@@ -343,8 +352,6 @@ def render_kreis_dashboard(kreis_id: str, disease: str,
         [kreis_gap_fill, kreis_preds_all], ignore_index=True
     ).sort_values("target_week")
 
-    # Metric cards (headline numbers) show only genuine forecasts, not
-    # the gap-fill nowcast weeks.
     kreis_preds = kreis_preds_all[
         kreis_preds_all["prediction_type"] == "forecast"
     ].sort_values("horizon") if not kreis_preds_all.empty else kreis_preds_all
@@ -355,17 +362,10 @@ def render_kreis_dashboard(kreis_id: str, disease: str,
     else:
         cols = st.columns(len(kreis_preds))
         for col, (_, row) in zip(cols, kreis_preds.iterrows()):
-            last_actual, last_actual_date = get_last_known_actual(master, kreis_id, disease)
-            delta = None
-            if last_actual is not None and last_actual > 0:
-                delta = f"{(row['predicted_incidence']/last_actual - 1)*100:+.0f}%"
-
             label = HORIZON_LABELS.get(row["horizon"], f"Prediction (+{row['horizon']} weeks)")
             col.metric(
                 label=f"{label} ({row['target_week'].strftime('%Y-%m-%d')})",
                 value=f"{row['predicted_incidence']:.1f}",
-                delta=delta,
-                delta_color="inverse",
             )
 
     # SurvStat: last known actual (with reporting-lag caveat)
@@ -387,12 +387,51 @@ def render_kreis_dashboard(kreis_id: str, disease: str,
     else:
         st.info("No officially reported data available for this Kreis/disease.")
 
-    # Historical trend chart: actual + prediction, with an honest
-    # gap between them if the reporting lag creates one
+    # Two separate history charts: actual reported values, and what
+    # the model has been predicting over roughly the same time window
     kreis_history = master[
         (master["kreis_id"] == kreis_id)
     ].sort_values("week_start").tail(26)   # last ~6 months
 
+    st.subheader("History: model's next-week predictions")
+    kreis_pred_history = prediction_history[
+        prediction_history["kreis_id"] == kreis_id
+    ].sort_values("target_week") if not prediction_history.empty else prediction_history
+
+    if not kreis_pred_history.empty:
+        st.caption("What the model predicts for each week, reconstructed fresh with "
+                  "the current model -- the red segment marks the two upcoming weeks: "
+                  "genuine forecasts, not yet confirmed by official data.")
+        fig = go.Figure()
+
+        # Historical portion: same style as the actual-incidence chart below,
+        # so the two charts read as a matched pair.
+        past = kreis_pred_history.iloc[:-2] if len(kreis_pred_history) > 2 else kreis_pred_history.iloc[:0]
+        fig.add_trace(go.Scatter(
+            x=past["target_week"], y=past["predicted_incidence"],
+            mode="lines+markers", name="Predicted (past)",
+            line=dict(color="#2c3e50"),
+        ))
+
+        # Future portion: exactly the last 2 weeks -- genuine forecasts,
+        # highlighted in red. No overlap with the "past" trace above, so
+        # there's a small visual break where the two segments meet rather
+        # than a continuously-colored line.
+        future = kreis_pred_history.iloc[-2:] if len(kreis_pred_history) >= 2 else kreis_pred_history
+        fig.add_trace(go.Scatter(
+            x=future["target_week"], y=future["predicted_incidence"],
+            mode="lines+markers", name="Predicted (upcoming)",
+            line=dict(color="#c44e52"),
+        ))
+
+        fig.update_layout(height=300, margin={"t": 20, "b": 20}, showlegend=False,
+                         xaxis_title="Week", yaxis_title="Predicted incidence per 100,000 people")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No prediction history available -- check that "
+               "build_prediction_history.py has run successfully.")
+
+    st.subheader("History: officially reported incidence")
     if not kreis_history.empty:
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -402,15 +441,11 @@ def render_kreis_dashboard(kreis_id: str, disease: str,
             connectgaps=False,   # explicit: NaN weeks (incomplete reporting)
                                   # show as a genuine gap, never interpolated
         ))
-        if not kreis_preds_all.empty:
-            fig.add_trace(go.Scatter(
-                x=kreis_preds_all["target_week"], y=kreis_preds_all["predicted_incidence"],
-                mode="lines+markers", name="Forecast",
-                line=dict(color="#c44e52", dash="dash"),
-            ))
-        fig.update_layout(height=350, margin={"t": 20, "b": 20},
+        fig.update_layout(height=300, margin={"t": 20, "b": 20},
                          xaxis_title="Week", yaxis_title="Incidence per 100,000 people")
         st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No reported history available for this Kreis.")
 
     # Other RKI sources (Bundesland-level, broadcast to this Kreis)
     st.subheader("Other official data sources (state-level, same for every Kreis in that state)")
@@ -436,7 +471,7 @@ def render_kreis_dashboard(kreis_id: str, disease: str,
                 fig.update_layout(height=250, margin={"t": 10, "b": 10})
                 st.plotly_chart(fig, use_container_width=True)
 
-    # Google Trends
+    # ---- Google Trends ----
     st.subheader("Related Google searches (state-level)")
     trend_keywords = ["trends_grippe", "trends_influenza", "trends_grippeimpfung",
                      "trends_fieber", "trends_husten"]
@@ -469,6 +504,7 @@ def main():
     forecast_predictions = load_forecast_predictions()
     recent_avg_predictions = load_recent_avg_predictions()
     gap_fill_predictions = load_gap_fill_predictions()
+    prediction_history = load_prediction_history()
     master = load_master()
     coords = load_coords()
 
@@ -544,8 +580,7 @@ def main():
         clicked = render_map_with_summary(
             incidence_df_recent_avg, shapefile, coords,
             title="Average forecast (last 4 weeks)",
-            help_text="Smoothed view of what the model has been predicting "
-                      "recently, less sensitive to a single noisy week.",
+            help_text="Smoothed view of what the model recently predicted.",
             map_key="map_recent_avg", selected_kreis_id=selected_kreis_id,
         )
         if clicked:
@@ -579,7 +614,7 @@ def main():
     # Kreis dashboard
     if selected_kreis_id:
         render_kreis_dashboard(selected_kreis_id, disease, forecast_predictions,
-                              gap_fill_predictions, master, coords)
+                              gap_fill_predictions, prediction_history, master, coords)
     else:
         st.info("Select a Kreis using the search box in the sidebar, or click "
                "any of the three maps above, to see details.")
