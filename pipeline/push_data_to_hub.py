@@ -57,6 +57,7 @@ FILES_TO_UPLOAD = [
     "./data/predictions/latest_predictions.parquet",
     "./data/predictions/gap_fill_predictions.parquet",
     "./data/predictions/recent_avg_predictions.parquet",
+    "./data/predictions/prediction_history.parquet",
     "./data/master/master_dataset_filled.parquet",
 ]
 

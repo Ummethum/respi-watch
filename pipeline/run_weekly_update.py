@@ -64,6 +64,8 @@ STEPS = [
      "generate_gap_fill_predictions.py"),
     ("Compute recent (last 4 weeks) predictions average",
      "compute_recent_predictions_average.py"),
+    ("Build prediction history",
+     "build_prediction_history.py"),
     ("Push data to Hugging Face",
      "push_data_to_hub.py"),
 ]
